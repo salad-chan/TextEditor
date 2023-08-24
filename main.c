@@ -14,6 +14,18 @@
 
 #define CTRL_KEY(k) ((k) & 0x1f)
 
+enum editorKey {
+  ARROW_LEFT = 1000,
+  ARROW_RIGHT,
+  ARROW_UP,
+  ARROW_DOWN,
+  PAGE_UP,
+  PAGE_DOWN,
+  HOME_KEY,
+  END_KEY,
+  DELETE_KEY
+};
+
 /* Data */
 struct editorConfig
 {
@@ -58,7 +70,7 @@ void enableRawmode() {
         killProgram("tcsetattr");
 }
 
-char editorReadKey() {
+int editorReadKey() {
     int nread;
     char c;
 
@@ -66,7 +78,80 @@ char editorReadKey() {
         if(nread == -1 && errno != EAGAIN) killProgram("read");
     }
 
-    return c;
+    if(c == '\x1b') {
+        char sequence[3];
+
+        if(read(STDIN_FILENO, &sequence[0], 1) != 1) return '\x1b';
+        if(read(STDIN_FILENO, &sequence[1], 1) != 1) return '\x1b';
+
+        if(sequence[0] == '[') {
+            if(sequence[1] >= '0' && sequence[1] <= '9') {
+                if(read(STDIN_FILENO, &sequence[2], 1) != 1) return '\x1b';
+                if(sequence[2] == '~') {
+                    switch (sequence[1])
+                    {
+                    case '1':
+                        return HOME_KEY;
+                        break;
+                    case '3':
+                        return DELETE_KEY;
+                        break;
+                    case '4':
+                        return END_KEY;
+                        break;
+                    case '5':
+                        return PAGE_UP;
+                        break;
+                    case '6':
+                        return PAGE_DOWN;
+                        break;
+                    case '7':
+                        return HOME_KEY;
+                        break;
+                    case '8':
+                        return END_KEY;
+                        break;
+                    }
+                }
+            } else {
+                switch (sequence[1]) {
+                case 'A': 
+                    return ARROW_UP; 
+                    break;
+                case 'B': 
+                    return ARROW_DOWN; 
+                    break;
+                case 'C': 
+                    return ARROW_RIGHT; 
+                    break;
+                case 'D': 
+                    return ARROW_LEFT; 
+                    break;
+                case 'H':
+                    return HOME_KEY;
+                    break;
+                case 'F':
+                    return END_KEY;
+                    break;
+                }
+            }
+        } else if (sequence[0] == 'O') {
+            switch (sequence[1]) {
+            case 'H':
+                return HOME_KEY;
+                break;
+            case 'F':
+                return END_KEY;
+                break;
+            }
+        }
+        
+
+        return '\x1b';
+
+    } else {
+        return c;
+    }
 }
 
 int getCursorPosition(int *rows, int *cols) {
@@ -131,26 +216,34 @@ void abFree(struct abuf *ab) {
 
 /* Input */
 
-void editorMoveCursor(char key) {
+void editorMoveCursor(int key) {
     switch (key)
     {
-    case 'w':
-        e.cy--;
+    case ARROW_UP:
+        if(e.cy != 0) {
+            e.cy--;
+        }
         break;
-    case 'a':
-        e.cx--;
+    case ARROW_LEFT:
+        if(e.cx != 0) {
+            e.cx--;
+        }
         break;
-    case 's':
-        e.cy++;
+    case ARROW_DOWN:
+        if(e.cy != e.screenrows - 1) {
+            e.cy++;
+        }
         break;
-    case 'd':
-        e.cx++;
+    case ARROW_RIGHT:
+        if(e.cx != e.screencols - 1) {
+            e.cx++;
+        }
         break;
     }
 }
 
 void editorProcessKeypress() {
-    char c = editorReadKey();
+    int c = editorReadKey();
 
     switch (c)
     {
@@ -160,13 +253,26 @@ void editorProcessKeypress() {
 
         exit(0);
         break;
-
-        case 'w':
-        case 'a':
-        case 's':
-        case 'd':
-            editorMoveCursor(c);
-            break;
+    case ARROW_UP:
+    case ARROW_LEFT:
+    case ARROW_DOWN:
+    case ARROW_RIGHT:
+        editorMoveCursor(c);
+        break;
+    case PAGE_UP:
+    case PAGE_DOWN:
+        {
+            int times = e.screenrows;
+            while(times--)
+                editorMoveCursor( ( c == PAGE_UP ) ? ARROW_UP : ARROW_DOWN);
+        }
+        break;
+    case HOME_KEY:
+        e.cx = 0;
+        break;
+    case END_KEY:
+        e.cx = e.screencols - 1;
+        break;
     }
 }
 
